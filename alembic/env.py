@@ -1,62 +1,146 @@
+import logging
+import sys
 from logging.config import fileConfig
+from pathlib import Path
 
-from sqlalchemy import engine_from_config
-from sqlalchemy import pool
+from sqlalchemy import engine_from_config, pool, text
 
-from alembic import context
+from alembic import context as alembic_context
 
-# this is the Alembic Config object, which provides
-# access to the values within the .ini file in use.
-config = context.config
+# ---------------------------------------------------------------------------
+# Make the project root importable so "app.*" imports resolve correctly.
+# ---------------------------------------------------------------------------
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# Interpret the config file for Python logging.
-# This line sets up loggers basically.
+from app.config import settings  # noqa: E402
+from app.shared.database import Base  # noqa: E402
+from app.domains.model_registry import MODEL_MODULES  # noqa: E402
+
+# ---------------------------------------------------------------------------
+# Load every domain's models so SQLAlchemy metadata is fully populated before
+# Alembic inspects it for autogenerate.  Each import is guarded so env.py
+# stays functional even before a domain's models have been written.
+# ---------------------------------------------------------------------------
+_log = logging.getLogger(__name__)
+
+for _mod in MODEL_MODULES:
+    try:
+        __import__(_mod)
+    except Exception as _exc:  # pragma: no cover
+        _log.warning("[model_registry] Could not import '%s': %s", _mod, _exc)
+
+# ---------------------------------------------------------------------------
+# Standard Alembic config.
+# ---------------------------------------------------------------------------
+config = alembic_context.config
+
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# add your model's MetaData object here
-# for 'autogenerate' support
-# from myapp import mymodel
-# target_metadata = mymodel.Base.metadata
-target_metadata = None
+# Use MIGRATION_DATABASE_URL directly — a dedicated sync (psycopg2) URL stored
+# in .env.  No driver string replacement needed.
+config.set_main_option("sqlalchemy.url", settings.MIGRATION_DATABASE_URL)
 
-# other values from the config, defined by the needs of env.py,
-# can be acquired:
-# my_important_option = config.get_main_option("my_important_option")
-# ... etc.
+target_metadata = Base.metadata
+
+# All known PostgreSQL schemas.  Any schema that is not listed here cannot be
+# selected and will be rejected at runtime.
+_SCHEMAS: list[str] = [
+    "users",
+    "rbac",
+    "social_graph",
+    "communities",
+    "content",
+    "notifications",
+]
+
+# Absolute path to the per-schema version directories.
+_VERSIONS_ROOT: Path = Path(__file__).resolve().parent / "versions"
 
 
+# ---------------------------------------------------------------------------
+# Schema selection
+#
+# For revision commands, -x schema=<domain> is required:
+#   alembic -x schema=users revision --autogenerate -m "users_init"
+#   alembic -x schema=users revision -m "users_init"
+#
+# For upgrade/downgrade, no -x schema is needed:
+#   alembic upgrade head
+#   alembic downgrade -1
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# include_object — filter autogenerate diff to the selected schema only.
+# Reads -x schema lazily so upgrade/downgrade are unaffected (no schema = include all).
+# ---------------------------------------------------------------------------
+def include_object(obj, name: str, type_: str, reflected: bool, compare_to) -> bool:
+    if type_ == "table":
+        schema = alembic_context.get_x_argument(as_dictionary=True).get("schema", "")
+        if schema:
+            return getattr(obj, "schema", None) == schema
+    return True
+
+
+# ---------------------------------------------------------------------------
+# process_revision_directives — validate schema and auto-route migration files.
+#
+# Runs only during `alembic revision`.  This is the single place where
+# -x schema=<domain> is enforced.  The final file path is always:
+#   alembic/versions/<schema>/<rev>_<slug>.py
+# ---------------------------------------------------------------------------
+def process_revision_directives(context, revision, directives) -> None:  # type: ignore[override]
+    if not directives:
+        return
+    x_args = alembic_context.get_x_argument(as_dictionary=True)
+    schema = x_args.get("schema")
+    if not schema:
+        raise RuntimeError(
+            "\n[Alembic] ERROR: No schema specified.\n"
+            "  Every revision command requires: alembic -x schema=<domain> revision ...\n"
+            f"  Valid schemas: {', '.join(_SCHEMAS)}\n"
+        )
+    if schema not in _SCHEMAS:
+        raise RuntimeError(
+            f"\n[Alembic] ERROR: Unknown schema '{schema}'.\n"
+            f"  Valid schemas: {', '.join(_SCHEMAS)}\n"
+        )
+    target_dir: Path = _VERSIONS_ROOT / schema
+    target_dir.mkdir(parents=True, exist_ok=True)
+    for script in directives:
+        script.version_path = str(target_dir)
+
+
+# ---------------------------------------------------------------------------
+# Offline mode
+# ---------------------------------------------------------------------------
 def run_migrations_offline() -> None:
-    """Run migrations in 'offline' mode.
-
-    This configures the context with just a URL
-    and not an Engine, though an Engine is acceptable
-    here as well.  By skipping the Engine creation
-    we don't even need a DBAPI to be available.
-
-    Calls to context.execute() here emit the given string to the
-    script output.
-
-    """
+    """Emit migration SQL to stdout without a live DB connection."""
     url = config.get_main_option("sqlalchemy.url")
-    context.configure(
+    alembic_context.configure(
         url=url,
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_schemas=True,
+        include_object=include_object,
+        process_revision_directives=process_revision_directives,
+        compare_type=True,
+        compare_server_default=True,
+        version_table="alembic_version",
+        version_table_schema="public",
     )
 
-    with context.begin_transaction():
-        context.run_migrations()
+    with alembic_context.begin_transaction():
+        alembic_context.run_migrations()
 
 
+# ---------------------------------------------------------------------------
+# Online mode (sync psycopg2 connection — Alembic requirement, never asyncpg)
+# ---------------------------------------------------------------------------
 def run_migrations_online() -> None:
-    """Run migrations in 'online' mode.
-
-    In this scenario we need to create an Engine
-    and associate a connection with the context.
-
-    """
+    """Run migrations against a live database using a synchronous connection."""
     connectable = engine_from_config(
         config.get_section(config.config_ini_section, {}),
         prefix="sqlalchemy.",
@@ -64,15 +148,28 @@ def run_migrations_online() -> None:
     )
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection, target_metadata=target_metadata
+        # Ensure all domain schemas exist before running any migration.
+        for schema in _SCHEMAS:
+            connection.execute(text(f"CREATE SCHEMA IF NOT EXISTS {schema}"))
+        connection.commit()
+
+        alembic_context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+            include_schemas=True,
+            include_object=include_object,
+            process_revision_directives=process_revision_directives,
+            compare_type=True,
+            compare_server_default=True,
+            version_table="alembic_version",
+            version_table_schema="public",
         )
 
-        with context.begin_transaction():
-            context.run_migrations()
+        with alembic_context.begin_transaction():
+            alembic_context.run_migrations()
 
 
-if context.is_offline_mode():
+if alembic_context.is_offline_mode():
     run_migrations_offline()
 else:
     run_migrations_online()

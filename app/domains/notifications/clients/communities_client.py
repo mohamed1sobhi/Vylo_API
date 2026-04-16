@@ -1,0 +1,1 @@
+"""Outbound client placeholder from notifications to communities."""

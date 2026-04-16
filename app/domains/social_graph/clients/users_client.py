@@ -1,0 +1,1 @@
+"""Outbound client placeholder from social_graph to users."""

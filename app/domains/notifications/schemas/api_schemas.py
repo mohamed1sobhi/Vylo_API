@@ -1,0 +1,1 @@
+"""HTTP schema placeholders for the notifications domain."""

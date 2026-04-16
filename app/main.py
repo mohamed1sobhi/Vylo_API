@@ -5,12 +5,12 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.domains.users.apis.router import router as users_router
-from app.domains.rbac.apis.router import router as rbac_router
-from app.domains.social_graph.apis.router import router as social_graph_router
-from app.domains.communities.apis.router import router as communities_router
-from app.domains.content.apis.router import router as content_router
-from app.domains.notifications.apis.router import router as notifications_router
+from app.domains.users.api.router import router as users_router
+from app.domains.rbac.api.router import router as rbac_router
+from app.domains.social_graph.api.router import router as social_graph_router
+from app.domains.communities.api.router import router as communities_router
+from app.domains.content.api.router import router as content_router
+from app.domains.notifications.api.router import router as notifications_router
 
 API_V1_PREFIX = "/api/v1"
 

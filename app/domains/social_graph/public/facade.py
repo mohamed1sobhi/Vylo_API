@@ -1,0 +1,1 @@
+"""Internal facade placeholder for the social_graph domain."""

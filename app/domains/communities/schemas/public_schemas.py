@@ -1,0 +1,1 @@
+"""Internal DTO placeholders for the communities domain."""

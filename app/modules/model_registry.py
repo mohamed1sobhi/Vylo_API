@@ -10,10 +10,10 @@
 # ---------------------------------------------------------------------------
 
 MODEL_MODULES: list[str] = [
-    "app.domains.users.models.models",
-    "app.domains.rbac.models.models",
-    "app.domains.social_graph.models.models",
-    "app.domains.communities.models.models",
-    "app.domains.content.models.models",
-    "app.domains.notifications.models.models",
+    "app.modules.users.models.models",
+    "app.modules.rbac.models.models",
+    "app.modules.social_graph.models.models",
+    "app.modules.communities.models.models",
+    "app.modules.content.models.models",
+    "app.modules.notifications.models.models",
 ]

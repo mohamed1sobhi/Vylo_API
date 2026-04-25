@@ -1,0 +1,1 @@
+"""Communities public ingress schema placeholders."""

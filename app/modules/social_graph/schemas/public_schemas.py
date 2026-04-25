@@ -1,1 +1,0 @@
-"""Internal DTO placeholders for the social_graph domain."""

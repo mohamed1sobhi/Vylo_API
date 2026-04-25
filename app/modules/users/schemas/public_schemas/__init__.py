@@ -1,0 +1,1 @@
+"""Users inter-module schema placeholders."""

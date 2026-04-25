@@ -1,0 +1,1 @@
+"""Notifications public ingress schema placeholders."""

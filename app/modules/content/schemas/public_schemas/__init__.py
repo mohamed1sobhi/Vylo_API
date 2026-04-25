@@ -1,0 +1,1 @@
+"""Content inter-module schema placeholders."""

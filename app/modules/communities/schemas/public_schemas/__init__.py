@@ -1,0 +1,1 @@
+"""Communities inter-module schema placeholders."""

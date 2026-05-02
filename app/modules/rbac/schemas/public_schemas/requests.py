@@ -1,1 +1,0 @@
-"""RBAC public ingress schema placeholders."""

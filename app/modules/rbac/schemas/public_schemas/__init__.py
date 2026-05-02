@@ -1,1 +1,0 @@
-"""RBAC inter-module schema placeholders."""

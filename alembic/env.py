@@ -12,8 +12,8 @@ from alembic import context as alembic_context
 # ---------------------------------------------------------------------------
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from app.config import settings  # noqa: E402
-from app.shared.database import Base  # noqa: E402
+from app.shared.config.settings import settings  # noqa: E402
+from app.shared.database.session import Base  # noqa: E402
 from app.modules.model_registry import MODEL_MODULES  # noqa: E402
 
 # ---------------------------------------------------------------------------
@@ -47,7 +47,7 @@ target_metadata = Base.metadata
 # selected and will be rejected at runtime.
 _SCHEMAS: list[str] = [
     "users",
-    "rbac",
+    "auth",
     "social_graph",
     "communities",
     "content",

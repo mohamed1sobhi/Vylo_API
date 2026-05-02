@@ -1,0 +1,1 @@
+"""Auth client egress schema placeholders."""

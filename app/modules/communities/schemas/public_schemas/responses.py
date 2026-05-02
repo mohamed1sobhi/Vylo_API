@@ -1,0 +1,1 @@
+"""Communities client egress schema placeholders."""

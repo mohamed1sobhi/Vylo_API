@@ -1,0 +1,1 @@
+"""Social graph public ingress schema placeholders."""

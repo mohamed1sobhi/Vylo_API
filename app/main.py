@@ -1,23 +1,21 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi import FastAPI
 
 from app.modules.users.api.router import router as users_router
-from app.modules.rbac.api.router import router as rbac_router
+from app.modules.auth.api.router import router as auth_router
 from app.modules.social_graph.api.router import router as social_graph_router
 from app.modules.communities.api.router import router as communities_router
 from app.modules.content.api.router import router as content_router
 from app.modules.notifications.api.router import router as notifications_router
+from app.shared.exceptions.handlers import register_exception_handlers
 
 API_V1_PREFIX = "/api/v1"
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Phase 10: seed RBAC defaults and register event handlers here
+    # Phase 10: register startup singletons such as notification listeners here.
     yield
     # Phase 10: teardown (e.g. close DB connections) here
 
@@ -28,33 +26,7 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-
-# ---------------------------------------------------------------------------
-# Global exception handlers
-# ---------------------------------------------------------------------------
-
-@app.exception_handler(StarletteHTTPException)
-async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> JSONResponse:
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail},
-    )
-
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError) -> JSONResponse:
-    return JSONResponse(
-        status_code=422,
-        content={"detail": exc.errors()},
-    )
-
-
-@app.exception_handler(Exception)
-async def generic_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error"},
-    )
+register_exception_handlers(app)
 
 
 # ---------------------------------------------------------------------------
@@ -62,7 +34,7 @@ async def generic_exception_handler(request: Request, exc: Exception) -> JSONRes
 # ---------------------------------------------------------------------------
 
 app.include_router(users_router, prefix=API_V1_PREFIX)
-app.include_router(rbac_router, prefix=API_V1_PREFIX)
+app.include_router(auth_router, prefix=API_V1_PREFIX)
 app.include_router(social_graph_router, prefix=API_V1_PREFIX)
 app.include_router(communities_router, prefix=API_V1_PREFIX)
 app.include_router(content_router, prefix=API_V1_PREFIX)

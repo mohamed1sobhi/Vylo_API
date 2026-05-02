@@ -1,0 +1,1 @@
+"""Social graph client egress schema placeholders."""

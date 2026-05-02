@@ -1,0 +1,1 @@
+"""Content client egress schema placeholders."""

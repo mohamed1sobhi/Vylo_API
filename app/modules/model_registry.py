@@ -11,7 +11,7 @@
 
 MODEL_MODULES: list[str] = [
     "app.modules.users.models.models",
-    "app.modules.rbac.models.models",
+    "app.modules.auth.models.models",
     "app.modules.social_graph.models.models",
     "app.modules.communities.models.models",
     "app.modules.content.models.models",

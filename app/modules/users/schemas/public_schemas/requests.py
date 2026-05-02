@@ -1,0 +1,1 @@
+"""Users public ingress schema placeholders."""

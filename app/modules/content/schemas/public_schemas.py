@@ -1,1 +1,0 @@
-"""Internal DTO placeholders for the content domain."""

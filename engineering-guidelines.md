@@ -76,7 +76,7 @@ All wiring is performed by FastAPI `Depends()` chains defined **exclusively** in
 | File | Imports from |
 |---|---|
 | `users_deps.py` | `modules/users/*` only |
-| `rbac_deps.py` | `modules/rbac/*` + `users_deps` |
+| `auth_deps.py` | `modules/auth/*` only |
 | `social_graph_deps.py` | `modules/social_graph/*` + `users_deps` |
 | `communities_deps.py` | `modules/communities/*` + `users_deps` |
 | `content_deps.py` | `modules/content/*` + `communities_deps` |
@@ -109,6 +109,20 @@ Cross-module calls are always exactly **one hop**: `clients/` → `public/`. Cha
 
 ---
 
+## Frontend API Ownership Boundaries
+
+From the frontend perspective, each module API owns a distinct responsibility boundary:
+
+- `users/api/` owns non-system user registration, login, refresh-token flows, and user CRUD/profile operations.
+- `auth/api/` owns system-user CRUD, system-user login, refresh-token flows, and all system role/permission assignment or revocation flows.
+- Non-system users authenticate through `users/api/`, and their access tokens carry `system_permissions=[]`.
+- System users authenticate through `auth/api/`, and their access tokens carry `system_permissions` resolved from the auth module's role/permission model.
+- Both login surfaces must issue the same token envelope so the shared auth dependencies continue to work unchanged.
+- `communities/api/` owns community lifecycle and membership workflows. If it needs to validate a user ID or fetch user data, it does so through its injected `UsersClient` calling the `users/public/` facade.
+- Generic authenticated routes use `get_current_user` and then defer ownership, visibility, or membership checks to the owning domain service. For example, content visibility is enforced by the content module, not by shared auth helpers.
+
+---
+
 ## 7. Strict Prohibitions
 
 ```
@@ -123,6 +137,8 @@ Cross-module calls are always exactly **one hop**: `clients/` → `public/`. Cha
 ❌ handlers/           →  imports other module's public/, services/, repositories/, or models/
 ❌ shared/auth/dependencies.py → imports any module
 ❌ Any layer           →  uses `public_schemas.py`, `dto.py`, or `dtos.py` for inter-module boundaries
+❌ users/api           →  owns system-user, system-role, or system-permission routes
+❌ auth/api            →  owns non-system user registration, profile, or CRUD routes
 
 ✅ services/           →  shared/auth/jwt.py              (token issuance + password hashing)
 ✅ services/           →  shared/events/bus.py             (event publishing only)
@@ -131,7 +147,7 @@ Cross-module calls are always exactly **one hop**: `clients/` → `public/`. Cha
 ✅ repositories/       →  own models/                      (only this layer)
 ✅ clients/            →  own `schemas/public_schemas/responses.py` (boundary validation only)
 ✅ public/             →  own `schemas/public_schemas/requests.py`  (boundary validation only)
-✅ api/                →  shared/auth/dependencies.py      (get_current_user, require_permission)
+✅ api/                →  shared/auth/dependencies.py      (get_current_user, require_system_permission)
 ✅ api/                →  shared/dependencies/<module>_deps.py
 ✅ main.py (lifespan)  →  shared/dependencies/<module>_deps.py  (startup wiring only)
 ✅ _deps.py            →  own module's concrete classes + other _deps.py files
@@ -141,29 +157,62 @@ Cross-module calls are always exactly **one hop**: `clients/` → `public/`. Cha
 
 ## 8. Authentication Contract
 
-### Token Issuance — owned by `users/services/`
+### Token Issuance — owned by `users/services/` and `auth/services/`
 
-- `UserService` imports `hash_password`, `verify_password`, `create_access_token`, `create_refresh_token`, `decode_token` directly from `shared/auth/jwt.py`.
-- Tokens are issued on `register`, `login`, and `refresh` — all inside `UserService`.
-- The JWT payload **must** embed everything needed for authorization at request time:
-  - `user_id`
-  - `system_permissions: list[str]`
+- `UserService` owns registration, login, access-token issuance, and refresh flows for non-system users stored in `users.users`.
+- `AuthService` owns system-user CRUD, login, access-token issuance, refresh flows, and role/permission management for system users stored in `auth.users`.
+- `UserService` does **not** manage system users, system roles, or system permissions.
+- `AuthService` does **not** call the users module for system-user lifecycle or system-user login.
+- Both services must issue the same token envelope so `get_current_user` and `require_system_permission(...)` continue to work unchanged.
 
-### Token Verification — stateless and shared
+### JWT Encoding Rules
 
-- `shared/auth/jwt.py` — pure functions only; zero DB calls, zero module imports.
-- `shared/auth/dependencies.py` — stateless FastAPI helpers; **zero imports from any module or `shared/dependencies/`**.
-  - Uses `OAuth2PasswordBearer` for Bearer token extraction.
-  - `get_current_user` — extracts the Bearer token, calls `decode_token`, returns the raw claims **dict** (not a Pydantic model).
-  - `require_permission(codename)` — closure that checks `current_user["system_permissions"]`; raises `ForbiddenError` if absent.
+- `shared/auth/jwt.py` is pure functions only: zero DB calls, zero module imports.
+- Validate the input schema before encoding. No payload normalization is allowed except `UUID` → `str` conversion.
+- Keep token builders separate: `create_access_token(...)` and `create_refresh_token(...)`.
+- Every encoded token must include `iat`, `exp`, and `jti`.
+- Access tokens must include at least:
+      - `sub` — the user ID as a string
+      - `token_type="access"`
+      - `system_permissions: list[str]`
+- Refresh tokens must include at least:
+      - `sub`
+      - `token_type="refresh"`
+- Non-system users must receive `system_permissions=[]` in access tokens.
+- System users must receive `system_permissions` derived from the auth module's role/permission assignments.
+
+### JWT Decoding Rules
+
+- `decode_token()` verifies signature and expiration only.
+- `decode_token()` returns the decoded payload `dict`.
+- `decode_token()` must **not** enforce business rules such as token type, ownership, membership, or permissions.
+
+### Auth FastAPI Dependency Contract
+
+- `shared/auth/dependencies.py` has **zero imports from any module or `shared/dependencies/`**.
+- `get_current_user` is the generic authenticated-route dependency:
+      - extract the Bearer token with `OAuth2PasswordBearer`
+      - call `decode_token()`
+      - validate required claims: `sub`, `token_type`
+      - enforce `token_type == "access"`
+      - return the raw claims `dict`
+- `require_system_permission(codename)` is the system-route dependency:
+      - depend on `get_current_user`
+      - read `current_user["system_permissions"]`
+      - raise `ForbiddenError` when the permission is absent
+- The shared dependency layer is population-agnostic: it validates token claims only and does not care whether `sub` belongs to `users.users` or `auth.users`.
+- Generic authenticated routes use `get_current_user` only. Ownership, membership, visibility, and similar business rules are then evaluated manually by the owning route/service pair.
+- Shared auth helpers must not evaluate post visibility, community membership, resource ownership, or any other domain rule.
 
 ### OAuth2 Login Input Contract
 
-- Login endpoints must use FastAPI `OAuth2PasswordRequestForm` as the input form contract.
+- Both `users/api/` and `auth/api/` login endpoints must use FastAPI `OAuth2PasswordRequestForm` as the input form contract.
 
-### No DB Calls at Request Time
+### Request-Time Authorization Boundary
 
-**No route or service ever calls a DB query to resolve permissions at request time.** All permission data is already embedded in the token. `shared/auth/dependencies.py` checks only the token claims.
+- **No DB call is made at request time to resolve system permissions.** System-permission checks rely only on access-token claims.
+- Domain ownership and visibility checks are still allowed at request time, but they must happen inside the owning domain boundary. For example, content visibility is checked by the content module and private-community membership is checked by the communities module.
+- `sub` must be resolved inside the owning domain boundary. A system-user token does not imply a matching row in `users.users`, and a non-system-user token does not imply a matching row in `auth.users`.
 
 ---
 
@@ -184,7 +233,7 @@ The `_deps.py` file is always the **last artifact** in each phase. It is the com
 
 ```
 users           ← no outbound module dependencies
-rbac            → users
+auth            ← no outbound module dependencies
 social_graph    → users
 communities     → users
 content         → communities
@@ -197,8 +246,9 @@ No module may introduce a dependency not listed in this graph.
 
 ## 11. Database Schema Rules
 
-- Foreign keys that cross PostgreSQL schemas (e.g. `rbac.user_roles.user_id` → `users.users.id`) are **soft references** (plain UUID columns, no FK constraint). Hard FK constraints are only used within the same PostgreSQL schema.
-- Alembic is configured for multi-schema migrations covering all 6 schemas: `users`, `rbac`, `social_graph`, `communities`, `content`, `notifications`.
+- Foreign keys that cross PostgreSQL schemas (e.g. `social_graph.friendships.requester_id` → `users.users.id`) are **soft references** (plain UUID columns, no FK constraint). Hard FK constraints are only used within the same PostgreSQL schema.
+- `auth.user_roles.user_id` is an in-schema foreign key to `auth.users.id` because both tables live inside the `auth` schema.
+- Alembic is configured for multi-schema migrations covering all 6 schemas: `users`, `auth`, `social_graph`, `communities`, `content`, `notifications`.
 - Alembic migrations must use a separate synchronous database URL (`MIGRATION_DATABASE_URL`) loaded from `.env`.
 - `get_db()` must use the following session atomicity guard:
 
@@ -237,10 +287,20 @@ async with AsyncSessionLocal() as session:
 | Settings | `shared/config/settings.py` | Single `BaseSettings` instance; all config from environment variables |
 | Database | `shared/database/session.py` | Async engine only (`create_async_engine`); `get_db` yields `AsyncSession` with atomicity guard |
 | JWT + hashing | `shared/auth/jwt.py` | Pure functions only — zero DB access, zero module imports |
-| Auth dependencies | `shared/auth/dependencies.py` | Zero module imports; only decodes token; uses `OAuth2PasswordBearer` |
+| Auth dependencies | `shared/auth/dependencies.py` | Zero module imports; decodes tokens, validates required claims, and exposes `require_system_permission()` over `get_current_user()` for both non-system and system-user tokens |
 | WebSocket manager | `shared/websockets/manager.py` | Module-level singleton; injected into `NotificationService` via constructor DI |
 | Exception handlers | `shared/exceptions/handlers.py` | Covers `HTTPException`, `RequestValidationError`, unhandled 500 |
 | Composition roots | `shared/dependencies/<module>_deps.py` | One file per module; the only place cross-module wiring happens |
+
+---
+
+## Default Data Seeding Rule
+
+- No module may insert bootstrap data, default roles, default permissions, or other reference rows during request handling, service construction, app startup, or shared dependency wiring.
+- All default/reference data must be created explicitly in `scripts/seed_<module_name>.py`.
+- Seed scripts own their own `AsyncSessionLocal` lifecycle, perform explicit commit/rollback, close the session in `finally`, and dispose the engine before exiting.
+- `main.py`, service constructors, and request handlers must never invoke seeding logic implicitly.
+- If a module requires initial data such as system roles/permissions, that requirement must be documented beside a corresponding seed script rather than implemented as hidden startup behavior.
 
 ---
 

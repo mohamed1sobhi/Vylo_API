@@ -1,0 +1,1 @@
+"""Auth public ingress schema placeholders."""

@@ -1,0 +1,1 @@
+"""Notifications inter-module schema placeholders."""

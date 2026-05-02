@@ -1,4 +1,4 @@
-from app.shared.auth.dependencies import get_current_user, oauth2_scheme, require_permission
+from app.shared.auth.dependencies import get_current_user, oauth2_scheme, require_system_permission
 from app.shared.auth.jwt import (
     create_access_token,
     create_refresh_token,
@@ -14,6 +14,6 @@ __all__ = [
     "get_current_user",
     "hash_password",
     "oauth2_scheme",
-    "require_permission",
+    "require_system_permission",
     "verify_password",
 ]

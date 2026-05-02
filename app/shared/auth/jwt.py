@@ -15,8 +15,23 @@ from app.shared.exceptions.handlers import UnauthorizedError
 password_hasher = PasswordHasher()
 
 
+def _validate_subject(subject: UUID | str) -> str:
+    if isinstance(subject, UUID):
+        return str(subject)
+    if isinstance(subject, str) and subject:
+        return subject
+    raise ValueError("Token subject must be a non-empty string or UUID")
+
+
+def _validate_permissions(system_permissions: Sequence[str] | None) -> list[str]:
+    permissions = list(system_permissions or [])
+    if any(not isinstance(permission, str) or not permission for permission in permissions):
+        raise ValueError("System permissions must be a sequence of non-empty strings")
+    return permissions
+
+
 def _encode_token(
-    user_id: UUID | str,
+    subject: UUID | str,
     token_type: str,
     expires_delta: timedelta,
     system_permissions: Sequence[str] | None = None,
@@ -25,29 +40,28 @@ def _encode_token(
     issued_at = int(now.timestamp())
     expires_at = int((now + expires_delta).timestamp())
     payload = {
-        "user_id": str(user_id),
-        "system_permissions": list(system_permissions or []),
+        "sub": _validate_subject(subject),
+        "system_permissions": _validate_permissions(system_permissions),
         "token_type": token_type,
         "iat": issued_at,
-        "nbf": issued_at,
         "exp": expires_at,
         "jti": str(uuid4()),
     }
     return jwt.encode(payload, settings.SECRET_KEY, algorithm=settings.ALGORITHM)
 
 
-def create_access_token(user_id: UUID | str, system_permissions: Sequence[str]) -> str:
+def create_access_token(subject: UUID | str, system_permissions: Sequence[str]) -> str:
     return _encode_token(
-        user_id=user_id,
+        subject=subject,
         token_type="access",
         expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
         system_permissions=system_permissions,
     )
 
 
-def create_refresh_token(user_id: UUID | str) -> str:
+def create_refresh_token(subject: UUID | str) -> str:
     return _encode_token(
-        user_id=user_id,
+        subject=subject,
         token_type="refresh",
         expires_delta=timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )

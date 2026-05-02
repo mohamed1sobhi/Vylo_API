@@ -9,7 +9,9 @@ from app.shared.auth.jwt import decode_token
 from app.shared.exceptions.handlers import ForbiddenError, UnauthorizedError
 
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
+# Swagger can point to only one OAuth2 password endpoint, but bearer tokens from
+# both login surfaces are accepted because validation is claim-based only.
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/users/login", auto_error=False)
 
 
 def _require_string_claim(payload: dict[str, Any], key: str) -> str:
@@ -34,7 +36,7 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> dict[s
         raise UnauthorizedError("Not authenticated")
 
     payload = decode_token(token)
-    _require_string_claim(payload, "user_id")
+    _require_string_claim(payload, "sub")
     token_type = _require_string_claim(payload, "token_type")
     _require_permissions_claim(payload)
 
@@ -44,7 +46,7 @@ async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> dict[s
     return payload
 
 
-def require_permission(permission_name: str):
+def require_system_permission(permission_name: str):
     async def dependency(current_user: dict[str, Any] = Depends(get_current_user)) -> dict[str, Any]:
         permissions = current_user.get("system_permissions", [])
         if permission_name not in permissions:
@@ -54,4 +56,4 @@ def require_permission(permission_name: str):
     return dependency
 
 
-__all__ = ["get_current_user", "oauth2_scheme", "require_permission"]
+__all__ = ["get_current_user", "oauth2_scheme", "require_system_permission"]

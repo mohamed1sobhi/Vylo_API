@@ -1,0 +1,1 @@
+"""Admins inter-module schema placeholders."""

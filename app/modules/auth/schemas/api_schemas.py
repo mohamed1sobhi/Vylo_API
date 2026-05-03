@@ -1,1 +1,0 @@
-"""HTTP schema placeholders for the auth domain."""

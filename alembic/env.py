@@ -47,7 +47,7 @@ target_metadata = Base.metadata
 # selected and will be rejected at runtime.
 _SCHEMAS: list[str] = [
     "users",
-    "auth",
+    "admins",
     "social_graph",
     "communities",
     "content",

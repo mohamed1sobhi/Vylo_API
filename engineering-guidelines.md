@@ -76,7 +76,7 @@ All wiring is performed by FastAPI `Depends()` chains defined **exclusively** in
 | File | Imports from |
 |---|---|
 | `users_deps.py` | `modules/users/*` only |
-| `auth_deps.py` | `modules/auth/*` only |
+| `admins_deps.py` | `modules/admins/*` only |
 | `social_graph_deps.py` | `modules/social_graph/*` + `users_deps` |
 | `communities_deps.py` | `modules/communities/*` + `users_deps` |
 | `content_deps.py` | `modules/content/*` + `communities_deps` |
@@ -114,9 +114,9 @@ Cross-module calls are always exactly **one hop**: `clients/` → `public/`. Cha
 From the frontend perspective, each module API owns a distinct responsibility boundary:
 
 - `users/api/` owns non-system user registration, login, refresh-token flows, and user CRUD/profile operations.
-- `auth/api/` owns system-user CRUD, system-user login, refresh-token flows, and all system role/permission assignment or revocation flows.
+- `admins/api/` owns system-user CRUD, system-user login, refresh-token flows, and all system role/permission assignment or revocation flows.
 - Non-system users authenticate through `users/api/`, and their access tokens carry `system_permissions=[]`.
-- System users authenticate through `auth/api/`, and their access tokens carry `system_permissions` resolved from the auth module's role/permission model.
+- System users authenticate through `admins/api/`, and their access tokens carry `system_permissions` resolved from the admins module's role/permission model.
 - Both login surfaces must issue the same token envelope so the shared auth dependencies continue to work unchanged.
 - `communities/api/` owns community lifecycle and membership workflows. If it needs to validate a user ID or fetch user data, it does so through its injected `UsersClient` calling the `users/public/` facade.
 - Generic authenticated routes use `get_current_user` and then defer ownership, visibility, or membership checks to the owning domain service. For example, content visibility is enforced by the content module, not by shared auth helpers.
@@ -138,7 +138,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 ❌ shared/auth/dependencies.py → imports any module
 ❌ Any layer           →  uses `public_schemas.py`, `dto.py`, or `dtos.py` for inter-module boundaries
 ❌ users/api           →  owns system-user, system-role, or system-permission routes
-❌ auth/api            →  owns non-system user registration, profile, or CRUD routes
+❌ admins/api          →  owns non-system user registration, profile, or CRUD routes
 
 ✅ services/           →  shared/auth/jwt.py              (token issuance + password hashing)
 ✅ services/           →  shared/events/bus.py             (event publishing only)
@@ -157,12 +157,12 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 
 ## 8. Authentication Contract
 
-### Token Issuance — owned by `users/services/` and `auth/services/`
+### Token Issuance — owned by `users/services/` and `admins/services/`
 
 - `UserService` owns registration, login, access-token issuance, and refresh flows for non-system users stored in `users.users`.
-- `AuthService` owns system-user CRUD, login, access-token issuance, refresh flows, and role/permission management for system users stored in `auth.users`.
+- `AdminService` owns system-user CRUD, login, access-token issuance, refresh flows, and role/permission management for system users stored in `admins.users`.
 - `UserService` does **not** manage system users, system roles, or system permissions.
-- `AuthService` does **not** call the users module for system-user lifecycle or system-user login.
+- `AdminService` does **not** call the users module for system-user lifecycle or system-user login.
 - Both services must issue the same token envelope so `get_current_user` and `require_system_permission(...)` continue to work unchanged.
 
 ### JWT Encoding Rules
@@ -179,7 +179,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
       - `sub`
       - `token_type="refresh"`
 - Non-system users must receive `system_permissions=[]` in access tokens.
-- System users must receive `system_permissions` derived from the auth module's role/permission assignments.
+- System users must receive `system_permissions` derived from the admins module's role/permission assignments.
 
 ### JWT Decoding Rules
 
@@ -200,19 +200,19 @@ From the frontend perspective, each module API owns a distinct responsibility bo
       - depend on `get_current_user`
       - read `current_user["system_permissions"]`
       - raise `ForbiddenError` when the permission is absent
-- The shared dependency layer is population-agnostic: it validates token claims only and does not care whether `sub` belongs to `users.users` or `auth.users`.
+- The shared dependency layer is population-agnostic: it validates token claims only and does not care whether `sub` belongs to `users.users` or `admins.users`.
 - Generic authenticated routes use `get_current_user` only. Ownership, membership, visibility, and similar business rules are then evaluated manually by the owning route/service pair.
 - Shared auth helpers must not evaluate post visibility, community membership, resource ownership, or any other domain rule.
 
 ### OAuth2 Login Input Contract
 
-- Both `users/api/` and `auth/api/` login endpoints must use FastAPI `OAuth2PasswordRequestForm` as the input form contract.
+- Both `users/api/` and `admins/api/` login endpoints must use FastAPI `OAuth2PasswordRequestForm` as the input form contract.
 
 ### Request-Time Authorization Boundary
 
 - **No DB call is made at request time to resolve system permissions.** System-permission checks rely only on access-token claims.
 - Domain ownership and visibility checks are still allowed at request time, but they must happen inside the owning domain boundary. For example, content visibility is checked by the content module and private-community membership is checked by the communities module.
-- `sub` must be resolved inside the owning domain boundary. A system-user token does not imply a matching row in `users.users`, and a non-system-user token does not imply a matching row in `auth.users`.
+- `sub` must be resolved inside the owning domain boundary. A system-user token does not imply a matching row in `users.users`, and a non-system-user token does not imply a matching row in `admins.users`.
 
 ---
 
@@ -233,7 +233,7 @@ The `_deps.py` file is always the **last artifact** in each phase. It is the com
 
 ```
 users           ← no outbound module dependencies
-auth            ← no outbound module dependencies
+admins          ← no outbound module dependencies
 social_graph    → users
 communities     → users
 content         → communities
@@ -247,8 +247,8 @@ No module may introduce a dependency not listed in this graph.
 ## 11. Database Schema Rules
 
 - Foreign keys that cross PostgreSQL schemas (e.g. `social_graph.friendships.requester_id` → `users.users.id`) are **soft references** (plain UUID columns, no FK constraint). Hard FK constraints are only used within the same PostgreSQL schema.
-- `auth.user_roles.user_id` is an in-schema foreign key to `auth.users.id` because both tables live inside the `auth` schema.
-- Alembic is configured for multi-schema migrations covering all 6 schemas: `users`, `auth`, `social_graph`, `communities`, `content`, `notifications`.
+- `admins.user_roles.user_id` is an in-schema foreign key to `admins.users.id` because both tables live inside the `admins` schema.
+- Alembic is configured for multi-schema migrations covering all 6 schemas: `users`, `admins`, `social_graph`, `communities`, `content`, `notifications`.
 - Alembic migrations must use a separate synchronous database URL (`MIGRATION_DATABASE_URL`) loaded from `.env`.
 - `get_db()` must use the following session atomicity guard:
 

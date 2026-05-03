@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.modules.users.api.router import router as users_router
-from app.modules.auth.api.router import router as auth_router
+from app.modules.admins.api.router import router as admins_router
 from app.modules.social_graph.api.router import router as social_graph_router
 from app.modules.communities.api.router import router as communities_router
 from app.modules.content.api.router import router as content_router
@@ -34,7 +34,7 @@ register_exception_handlers(app)
 # ---------------------------------------------------------------------------
 
 app.include_router(users_router, prefix=API_V1_PREFIX)
-app.include_router(auth_router, prefix=API_V1_PREFIX)
+app.include_router(admins_router, prefix=API_V1_PREFIX)
 app.include_router(social_graph_router, prefix=API_V1_PREFIX)
 app.include_router(communities_router, prefix=API_V1_PREFIX)
 app.include_router(content_router, prefix=API_V1_PREFIX)

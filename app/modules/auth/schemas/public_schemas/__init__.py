@@ -1,1 +1,0 @@
-"""Auth inter-module schema placeholders."""

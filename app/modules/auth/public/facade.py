@@ -1,1 +1,0 @@
-"""Internal facade placeholder for the auth domain."""

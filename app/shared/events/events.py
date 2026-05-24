@@ -14,13 +14,13 @@ class UserRegisteredEvent(DomainEvent):
 @dataclass(kw_only=True, slots=True)
 class FriendRequestSentEvent(DomainEvent):
     requester_id: str
-    target_id: str
+    receiver_id: str
 
 
 @dataclass(kw_only=True, slots=True)
 class FriendshipFormedEvent(DomainEvent):
-    user_id_a: str
-    user_id_b: str
+    user_low: str
+    user_high: str
 
 
 @dataclass(kw_only=True, slots=True)

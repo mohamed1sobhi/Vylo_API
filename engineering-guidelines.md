@@ -246,7 +246,10 @@ No module may introduce a dependency not listed in this graph.
 
 ## 11. Database Schema Rules
 
-- Foreign keys that cross PostgreSQL schemas (e.g. `social_graph.friendships.requester_id` → `users.users.id`) are **soft references** (plain UUID columns, no FK constraint). Hard FK constraints are only used within the same PostgreSQL schema.
+- Foreign keys that cross PostgreSQL schemas (e.g. `social_graph.friend_requests.requester_id` → `users.users.id`) are **soft references** (plain UUID columns, no FK constraint). Hard FK constraints are only used within the same PostgreSQL schema.
+- `social_graph.friend_requests` keeps directional `requester_id`/`receiver_id` semantics. PostgreSQL must prevent duplicate or reverse-duplicate pending requests with a partial unique index on `LEAST(requester_id, receiver_id), GREATEST(requester_id, receiver_id)` filtered to `status='pending'`.
+- `social_graph.friendships` stores accepted friendships exactly once per unordered pair using canonical `user_low=min(user_a, user_b)` and `user_high=max(user_a, user_b)`. Enforce `UNIQUE(user_low, user_high)`, `CHECK(user_low < user_high)`, and indexes on both columns.
+- Accepting a friend request must create one `social_graph.friendships` row and delete the request row. Bidirectional duplicate friendship rows are forbidden.
 - `admins.user_roles.user_id` is an in-schema foreign key to `admins.users.id` because both tables live inside the `admins` schema.
 - Alembic is configured for multi-schema migrations covering all 6 schemas: `users`, `admins`, `social_graph`, `communities`, `content`, `notifications`.
 - Alembic migrations must use a separate synchronous database URL (`MIGRATION_DATABASE_URL`) loaded from `.env`.

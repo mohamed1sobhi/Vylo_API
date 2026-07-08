@@ -1,1 +1,30 @@
-# Placeholder — implemented in a later phase
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from typing import Any
+from uuid import UUID
+
+from sqlalchemy import DateTime, String
+from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.orm import Mapped, mapped_column
+
+from app.shared.database.session import Base
+
+
+def _utcnow() -> datetime:
+	return datetime.now(timezone.utc)
+
+
+class Notification(Base):
+	__tablename__ = "notifications"
+	__table_args__ = {"schema": "notifications"}
+
+	id: Mapped[UUID] = mapped_column(primary_key=True)
+	recipient_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
+	type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+	payload: Mapped[dict[str, Any]] = mapped_column(JSONB, nullable=False, default=dict)
+	is_read: Mapped[bool] = mapped_column(nullable=False, default=False, index=True)
+	created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+
+__all__ = ["Notification"]

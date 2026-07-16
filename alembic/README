@@ -1,1 +1,9 @@
-Generic single-database configuration.
+Vylo multi-schema migration environment.
+
+All schema-only revisions live directly in `alembic/versions/`. Alembic loads
+the synchronous `MIGRATION_DATABASE_URL` through application settings, imports
+every registered model module, and combines the six schema-specific metadata
+collections for autogenerate.
+
+Seed and sample data belong in explicit scripts under `scripts/`, never in a
+migration revision.

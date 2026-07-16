@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import DateTime, Enum as SqlEnum, ForeignKey, String, Text, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.shared.database.session import Base
+from app.shared.database.base import CommunitiesBase
 
 
 def _utcnow() -> datetime:
@@ -19,9 +19,8 @@ class CommunityVisibility(str, Enum):
 	PRIVATE = "private"
 
 
-class Community(Base):
+class Community(CommunitiesBase):
 	__tablename__ = "communities"
-	__table_args__ = {"schema": "communities"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(150), nullable=False, index=True)
@@ -40,9 +39,8 @@ class Community(Base):
 	)
 
 
-class CommunityRole(Base):
+class CommunityRole(CommunitiesBase):
 	__tablename__ = "community_roles"
-	__table_args__ = {"schema": "communities"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
@@ -54,9 +52,8 @@ class CommunityRole(Base):
 	members: Mapped[list[CommunityMember]] = relationship(back_populates="role")
 
 
-class CommunityPermission(Base):
+class CommunityPermission(CommunitiesBase):
 	__tablename__ = "community_permissions"
-	__table_args__ = {"schema": "communities"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
@@ -67,16 +64,15 @@ class CommunityPermission(Base):
 	)
 
 
-class CommunityRolePermission(Base):
+class CommunityRolePermission(CommunitiesBase):
 	__tablename__ = "community_role_permissions"
-	__table_args__ = {"schema": "communities"}
 
 	role_id: Mapped[UUID] = mapped_column(
-		ForeignKey("communities.community_roles.id", ondelete="CASCADE"),
+		ForeignKey("community_roles.id", ondelete="CASCADE"),
 		primary_key=True,
 	)
 	permission_id: Mapped[UUID] = mapped_column(
-		ForeignKey("communities.community_permissions.id", ondelete="CASCADE"),
+		ForeignKey("community_permissions.id", ondelete="CASCADE"),
 		primary_key=True,
 	)
 
@@ -84,22 +80,21 @@ class CommunityRolePermission(Base):
 	permission: Mapped[CommunityPermission] = relationship(back_populates="role_permissions")
 
 
-class CommunityMember(Base):
+class CommunityMember(CommunitiesBase):
 	__tablename__ = "community_members"
 	__table_args__ = (
 		UniqueConstraint("user_id", "community_id", name="uq_community_members_user_community"),
-		{"schema": "communities"},
 	)
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	user_id: Mapped[UUID] = mapped_column(nullable=False, index=True)
 	community_id: Mapped[UUID] = mapped_column(
-		ForeignKey("communities.communities.id", ondelete="CASCADE"),
+		ForeignKey("communities.id", ondelete="CASCADE"),
 		nullable=False,
 		index=True,
 	)
 	role_id: Mapped[UUID] = mapped_column(
-		ForeignKey("communities.community_roles.id", ondelete="RESTRICT"),
+		ForeignKey("community_roles.id", ondelete="RESTRICT"),
 		nullable=False,
 		index=True,
 	)

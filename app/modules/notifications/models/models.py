@@ -8,16 +8,15 @@ from sqlalchemy import DateTime, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.shared.database.session import Base
+from app.shared.database.base import NotificationsBase
 
 
 def _utcnow() -> datetime:
 	return datetime.now(timezone.utc)
 
 
-class Notification(Base):
+class Notification(NotificationsBase):
 	__tablename__ = "notifications"
-	__table_args__ = {"schema": "notifications"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	recipient_id: Mapped[UUID] = mapped_column(nullable=False, index=True)

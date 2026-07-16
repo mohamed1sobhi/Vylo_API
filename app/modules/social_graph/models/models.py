@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import CheckConstraint, DateTime, Enum as SqlEnum, Index, func, text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.shared.database.session import Base
+from app.shared.database.base import SocialGraphBase
 
 
 def _utcnow() -> datetime:
@@ -19,7 +19,7 @@ class FriendRequestStatus(str, Enum):
 	REJECTED = "rejected"
 
 
-class FriendRequest(Base):
+class FriendRequest(SocialGraphBase):
 	__tablename__ = "friend_requests"
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
@@ -47,11 +47,10 @@ class FriendRequest(Base):
 			unique=True,
 			postgresql_where=text("status = 'pending'"),
 		),
-		{"schema": "social_graph"},
 	)
 
 
-class Friendship(Base):
+class Friendship(SocialGraphBase):
 	__tablename__ = "friendships"
 
 	user_low: Mapped[UUID] = mapped_column(primary_key=True)
@@ -62,7 +61,6 @@ class Friendship(Base):
 		CheckConstraint("user_low < user_high", name="ck_friendships_canonical_pair"),
 		Index("ix_friendships_user_low", "user_low"),
 		Index("ix_friendships_user_high", "user_high"),
-		{"schema": "social_graph"},
 	)
 
 

@@ -6,16 +6,15 @@ from uuid import UUID
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.shared.database.session import Base
+from app.shared.database.base import UsersBase
 
 
 def _utcnow() -> datetime:
 	return datetime.now(timezone.utc)
 
 
-class User(Base):
+class User(UsersBase):
 	__tablename__ = "users"
-	__table_args__ = {"schema": "users"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
@@ -27,13 +26,12 @@ class User(Base):
 	profile: Mapped[UserProfile | None] = relationship(back_populates="user", uselist=False)
 
 
-class UserProfile(Base):
+class UserProfile(UsersBase):
 	__tablename__ = "user_profiles"
-	__table_args__ = {"schema": "users"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	user_id: Mapped[UUID] = mapped_column(
-		ForeignKey("users.users.id", ondelete="CASCADE"),
+		ForeignKey("users.id", ondelete="CASCADE"),
 		unique=True,
 		index=True,
 		nullable=False,

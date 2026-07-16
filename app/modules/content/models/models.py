@@ -7,7 +7,7 @@ from uuid import UUID
 from sqlalchemy import DateTime, Enum as SqlEnum, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
-from app.shared.database.session import Base
+from app.shared.database.base import ContentBase
 
 
 def _utcnow() -> datetime:
@@ -20,9 +20,8 @@ class PostVisibility(str, Enum):
 	COMMUNITY = "community"
 
 
-class Post(Base):
+class Post(ContentBase):
 	__tablename__ = "posts"
-	__table_args__ = {"schema": "content"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	author_id: Mapped[UUID] = mapped_column(nullable=False, index=True)

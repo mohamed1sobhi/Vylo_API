@@ -10,7 +10,7 @@ Every module under `app/modules/<module>/` must follow this strict internal laye
 
 | Layer | Responsibility | May Import From |
 |---|---|---|
-| `models/` | SQLAlchemy ORM entities | `shared/database/session.py` (Base), SQLAlchemy only |
+| `models/` | SQLAlchemy ORM entities | owning declarative base from `shared/database/base.py`, SQLAlchemy only |
 | `repositories/` | All SQL operations | own `models/` only, SQLAlchemy types |
 | `services/` | Pure business logic | `shared/auth/jwt.py`, `shared/events/bus.py`, `shared/events/events.py` (event class imports only) |
 | `clients/` | Outbound adapters to other modules | own `schemas/public_schemas/responses.py` (boundary validation only) |
@@ -144,7 +144,7 @@ From the frontend perspective, each module API owns a distinct responsibility bo
 ✅ services/           →  shared/auth/jwt.py              (token issuance + password hashing)
 ✅ services/           →  shared/events/bus.py             (event publishing only)
 ✅ services/           →  shared/events/events.py          (event class imports for publishing)
-✅ models/             →  shared/database/session.py       (Base)
+✅ models/             →  shared/database/base.py          (owning schema base)
 ✅ repositories/       →  own models/                      (only this layer)
 ✅ clients/            →  own `schemas/public_schemas/responses.py` (boundary validation only)
 ✅ public/             →  own `schemas/public_schemas/requests.py`  (boundary validation only)
@@ -245,15 +245,21 @@ No module may introduce a dependency not listed in this graph.
 
 ---
 
-## 11. Database Schema Rules
+## 11. Database And Migrations
 
-- Foreign keys that cross PostgreSQL schemas (e.g. `social_graph.friend_requests.requester_id` → `users.users.id`) are **soft references** (plain UUID columns, no FK constraint). Hard FK constraints are only used within the same PostgreSQL schema.
+- Each PostgreSQL schema has its own declarative base in `app/shared/database/base.py`; that base defines its schema through `MetaData(schema=...)`.
+- Model classes inherit their owning schema base and must not repeat schema names in `__table_args__` or schema-qualify in-schema foreign-key targets.
+- Cross-schema references are soft references: UUID columns or UUID plus owning-scope fields, without hard foreign-key constraints.
+- Hard foreign keys are only for tables inside the same PostgreSQL schema.
+- Alembic migrations define schema only. Seed rows, dummy data, role matrices, bootstrap users, and sample records are forbidden in migrations and runtime app code.
+- Alembic uses the synchronous `MIGRATION_DATABASE_URL` loaded from `.env` through `shared/config/settings.py`.
+- `alembic/env.py` imports `app/modules/model_registry.py`, then imports every listed model module dynamically so `ALL_METADATA` is populated.
+- All migration revisions live together in `alembic/versions/`; per-schema revision directories are forbidden.
+- Before online upgrades, `alembic/env.py` creates every known PostgreSQL schema and validates that metadata contains no cross-schema foreign keys.
 - `social_graph.friend_requests` keeps directional `requester_id`/`receiver_id` semantics. PostgreSQL must prevent duplicate or reverse-duplicate pending requests with a partial unique index on `LEAST(requester_id, receiver_id), GREATEST(requester_id, receiver_id)` filtered to `status='pending'`.
 - `social_graph.friendships` stores accepted friendships exactly once per unordered pair using canonical `user_low=min(user_a, user_b)` and `user_high=max(user_a, user_b)`. Enforce `UNIQUE(user_low, user_high)`, `CHECK(user_low < user_high)`, and indexes on both columns.
 - Accepting a friend request must create one `social_graph.friendships` row and delete the request row. Bidirectional duplicate friendship rows are forbidden.
 - `admins.user_roles.user_id` is an in-schema foreign key to `admins.users.id` because both tables live inside the `admins` schema.
-- Alembic is configured for multi-schema migrations covering all 6 schemas: `users`, `admins`, `social_graph`, `communities`, `content`, `notifications`.
-- Alembic migrations must use a separate synchronous database URL (`MIGRATION_DATABASE_URL`) loaded from `.env`.
 - `get_db()` must use the following session atomicity guard:
 
 ```python
@@ -289,7 +295,8 @@ async with AsyncSessionLocal() as session:
 | Component | File | Rule |
 |---|---|---|
 | Settings | `shared/config/settings.py` | Single `BaseSettings` instance; all config from environment variables |
-| Database | `shared/database/session.py` | Async engine only (`create_async_engine`); `get_db` yields `AsyncSession` with atomicity guard |
+| Database metadata | `shared/database/base.py` | One declarative base per PostgreSQL schema; exports `ALL_METADATA` for Alembic |
+| Database session | `shared/database/session.py` | Async engine only (`create_async_engine`); `get_db` yields `AsyncSession` with atomicity guard |
 | JWT + hashing | `shared/auth/jwt.py` | Pure functions only — zero DB access, zero module imports |
 | Auth dependencies | `shared/auth/dependencies.py` | Zero module imports; decodes tokens, validates required claims, and exposes `require_system_permission()` over `get_current_user()` for both non-system and system-user tokens |
 | WebSocket manager | `shared/websockets/manager.py` | Module-level singleton; injected into `NotificationService` via constructor DI |
@@ -300,7 +307,7 @@ async with AsyncSessionLocal() as session:
 
 ## Default Data Seeding Rule
 
-- No module may insert bootstrap data, default roles, default permissions, or other reference rows during request handling, service construction, app startup, or shared dependency wiring.
+- No module may insert bootstrap data, default roles, default permissions, or other reference rows in migrations, request handling, service construction, app startup, or shared dependency wiring.
 - All default/reference data must be created explicitly in `scripts/seed_<module_name>.py`.
 - Seed scripts own their own `AsyncSessionLocal` lifecycle, perform explicit commit/rollback, close the session in `finally`, and dispose the engine before exiting.
 - `main.py`, service constructors, and request handlers must never invoke seeding logic implicitly.

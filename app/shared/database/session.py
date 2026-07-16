@@ -1,5 +1,4 @@
-from sqlalchemy.ext.asyncio import AsyncAttrs, AsyncSession, async_sessionmaker, create_async_engine
-from sqlalchemy.orm import DeclarativeBase
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.shared.config.settings import settings
 
@@ -11,10 +10,6 @@ AsyncSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-class Base(AsyncAttrs, DeclarativeBase):
-    pass
 
 
 async def get_db() -> AsyncSession:  # type: ignore[return]
@@ -29,4 +24,4 @@ async def get_db() -> AsyncSession:  # type: ignore[return]
             await session.close()
 
 
-__all__ = ["AsyncSessionLocal", "Base", "engine", "get_db"]
+__all__ = ["AsyncSessionLocal", "engine", "get_db"]

@@ -6,16 +6,15 @@ from uuid import UUID
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from app.shared.database.session import Base
+from app.shared.database.base import AdminsBase
 
 
 def _utcnow() -> datetime:
 	return datetime.now(timezone.utc)
 
 
-class AdminUser(Base):
+class AdminUser(AdminsBase):
 	__tablename__ = "users"
-	__table_args__ = {"schema": "admins"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	username: Mapped[str] = mapped_column(String(50), unique=True, index=True, nullable=False)
@@ -27,9 +26,8 @@ class AdminUser(Base):
 	user_roles: Mapped[list[UserRole]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
 
-class Role(Base):
+class Role(AdminsBase):
 	__tablename__ = "roles"
-	__table_args__ = {"schema": "admins"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(100), unique=True, index=True, nullable=False)
@@ -42,9 +40,8 @@ class Role(Base):
 	user_roles: Mapped[list[UserRole]] = relationship(back_populates="role", cascade="all, delete-orphan")
 
 
-class Permission(Base):
+class Permission(AdminsBase):
 	__tablename__ = "permissions"
-	__table_args__ = {"schema": "admins"}
 
 	id: Mapped[UUID] = mapped_column(primary_key=True)
 	name: Mapped[str] = mapped_column(String(150), unique=True, index=True, nullable=False)
@@ -56,13 +53,12 @@ class Permission(Base):
 	)
 
 
-class RolePermission(Base):
+class RolePermission(AdminsBase):
 	__tablename__ = "role_permissions"
-	__table_args__ = {"schema": "admins"}
 
-	role_id: Mapped[UUID] = mapped_column(ForeignKey("admins.roles.id", ondelete="CASCADE"), primary_key=True)
+	role_id: Mapped[UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
 	permission_id: Mapped[UUID] = mapped_column(
-		ForeignKey("admins.permissions.id", ondelete="CASCADE"),
+		ForeignKey("permissions.id", ondelete="CASCADE"),
 		primary_key=True,
 	)
 
@@ -70,12 +66,11 @@ class RolePermission(Base):
 	permission: Mapped[Permission] = relationship(back_populates="role_permissions")
 
 
-class UserRole(Base):
+class UserRole(AdminsBase):
 	__tablename__ = "user_roles"
-	__table_args__ = {"schema": "admins"}
 
-	user_id: Mapped[UUID] = mapped_column(ForeignKey("admins.users.id", ondelete="CASCADE"), primary_key=True)
-	role_id: Mapped[UUID] = mapped_column(ForeignKey("admins.roles.id", ondelete="CASCADE"), primary_key=True)
+	user_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+	role_id: Mapped[UUID] = mapped_column(ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True)
 	assigned_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
 	user: Mapped[AdminUser] = relationship(back_populates="user_roles")
